@@ -12,6 +12,7 @@ from app.adapters.llm import (
     LiteLLMClient,
     RecordingLLMClient,
 )
+from app.adapters.web.auth import JWTVerifier
 from app.adapters.web.exceptions import (
     unhandled_exception_handler,
     validation_configuration_exception_handler,
@@ -32,6 +33,7 @@ setup_logging()
 
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncGenerator[None]:
+    application.state.jwt_verifier = JWTVerifier(settings)
     engine = create_async_engine(settings.DATABASE_URL, pool_pre_ping=True)
     try:
         application.state.validation_report_repository = PostgresValidationReportRepository(engine)

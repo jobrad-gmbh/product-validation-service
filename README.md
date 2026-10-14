@@ -7,12 +7,17 @@ report containing their business results.
 
 ```bash
 docker compose up -d postgres
+docker compose --profile local-auth up -d oauth
 uv sync --locked
 uv run alembic upgrade head
 uv run python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 The API documentation is available at <http://127.0.0.1:8000/docs>.
+Add the authentication settings from `.env.example` to your `.env` before
+starting. Both validation endpoints require a Bearer token, including locally.
+See [service authentication](AUTHENTICATION.md) for token commands, endpoint
+permissions, and the IAM registration needed for deployed environments.
 Set `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` in `.env` for the
 Compose database. `DATABASE_URL` reuses those values to connect local commands
 through `localhost`; set it differently if PostgreSQL is elsewhere. To run both the
@@ -20,6 +25,18 @@ database and API in containers, fill in `.env` with your LiteLLM and Jev
 settings, then use `docker compose up --build`. Compose builds the API's database
 URL from the PostgreSQL values using the `postgres` service hostname. The API
 container applies migrations before starting.
+
+For a fully containerized local run with mock authentication, set
+`AUTH_ISSUER=http://oauth:9010/accessory-validator` in `.env`, then run:
+
+```bash
+docker compose --profile local-auth up --build
+```
+
+Compose reads `AUTH_ISSUER` and `AUTH_AUDIENCE` directly from configuration.
+Use `localhost:9010` when the API runs on your computer and `oauth:9010` when
+it runs in Docker. Mock tokens must be obtained using the same issuer hostname; see
+[service authentication](AUTHENTICATION.md#local-tokens). To use real IAM, set its issuer URL instead and omit `--profile local-auth`.
 
 Products and validation executions are saved atomically. Criterion results are
 returned in the validation response but are not stored separately. LLM requests
@@ -31,6 +48,7 @@ are not foreign keys: requests from a failed validation have no stored product.
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/accessories/validate \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{
     "brand": "Example",
@@ -72,6 +90,7 @@ without their own settings use their default models and the general settings.
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/accessories/validate/test \
+  -H "Authorization: Bearer $TEST_ACCESS_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{
     "brand": "Example",
@@ -120,6 +139,7 @@ Put one accessory object on each nonblank line of an input `.jsonl` file:
 Run the batch script from the repository root:
 
 ```bash
+export ACCESSORY_VALIDATOR_ACCESS_TOKEN="$TEST_ACCESS_TOKEN"
 uv run python scripts/validate_accessories.py \
   --input /path/to/accessories.jsonl \
   --output /path/to/results.jsonl \
@@ -129,6 +149,10 @@ uv run python scripts/validate_accessories.py \
 ```
 
 - `--concurrency` accepts 1–32 concurrent validations; the default is 1.
+- `ACCESSORY_VALIDATOR_ACCESS_TOKEN` supplies the API Bearer token separately
+  from the LLM key. `--access-token` also works but exposes the token in the
+  process list. The token needs the test validate permission; renew it between
+  batches if it expires.
 - `--from-record 100 --to-record 200` optionally selects an inclusive, 1-based
   range. Blank lines are ignored; malformed nonblank lines count as records.
   Either bound may be used alone.
@@ -148,7 +172,7 @@ Each output line contains `record_number`, `input`, `status_code`, `result`, and
 `error`. Concurrent results may arrive out of input order; use `record_number`
 to match them. The API report is stored in `result`, including its product
 information. Invalid input, HTTP errors, and network failures are saved in
-`error`, and the remaining records continue. API keys are redacted from saved
+`error`, and the remaining records continue. API keys and access tokens are redacted from saved
 data. A business validation result of `INVALID` is still a successful API call.
 
 The script exits with code 0 when all selected requests succeed, 1 when a

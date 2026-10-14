@@ -51,6 +51,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--api-key", required=True, help="API key sent in llm_settings.api_key"
     )
     parser.add_argument(
+        "--access-token", default=os.environ.get("ACCESSORY_VALIDATOR_ACCESS_TOKEN"),
+        help="API bearer token (or set ACCESSORY_VALIDATOR_ACCESS_TOKEN)",
+    )
+    parser.add_argument(
         "--endpoint", default=DEFAULT_ENDPOINT, help="Full validate/test endpoint URL"
     )
     parser.add_argument(
@@ -90,6 +94,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if not args.api_key.strip():
         parser.error("--api-key must not be empty")
+    if not args.access_token or not args.access_token.strip():
+        parser.error("--access-token or ACCESSORY_VALIDATOR_ACCESS_TOKEN is required")
+    args.access_token = args.access_token.strip()
     if args.to_record is not None and args.to_record < args.from_record:
         parser.error("--to-record must be greater than or equal to --from-record")
     for name in ("input", "output"):
@@ -142,6 +149,10 @@ def redact(value: Any, api_key: str) -> Any:
     return value
 
 
+def redact_credentials(value: Any, args: argparse.Namespace) -> Any:
+    return redact(redact(value, args.api_key), args.access_token)
+
+
 def reject_constant(value: str) -> None:
     raise ValueError(f"Nonstandard JSON constant: {value}")
 
@@ -173,7 +184,7 @@ async def validate_record(
         }
     except (ValueError, TypeError) as exc:
         row["error"] = {"type": "invalid_input", "message": str(exc)}
-        return redact(row, args.api_key)
+        return redact_credentials(row, args)
 
     try:
         response = await client.post(args.endpoint, json=payload)
@@ -182,7 +193,7 @@ async def validate_record(
             "type": "request_error",
             "message": f"{type(exc).__name__}: {exc}",
         }
-        return redact(row, args.api_key)
+        return redact_credentials(row, args)
 
     row["status_code"] = response.status_code
     try:
@@ -196,7 +207,7 @@ async def validate_record(
                 "message": "Endpoint returned invalid JSON content",
                 "details": body,
             }
-            return redact(row, args.api_key)
+            return redact_credentials(row, args)
     if response.is_success:
         row["result"] = body
     else:
@@ -205,7 +216,7 @@ async def validate_record(
             "message": f"HTTP {response.status_code}",
             "details": body,
         }
-    return redact(row, args.api_key)
+    return redact_credentials(row, args)
 
 
 def prepare_append(output: TextIO) -> None:
@@ -242,6 +253,7 @@ async def run_batch(args: argparse.Namespace, output: TextIO) -> tuple[int, int]
     errors = 0
 
     async with httpx.AsyncClient(
+        headers={"Authorization": f"Bearer {args.access_token}"},
         timeout=args.timeout,
         limits=httpx.Limits(
             max_connections=args.concurrency, max_keepalive_connections=args.concurrency
@@ -310,7 +322,7 @@ def main(argv: list[str] | None = None) -> int:
         return 130
     except (OSError, ValueError, ExceptionGroup) as exc:
         print(
-            f"Batch stopped: {redact(error_message(exc), args.api_key)}. Completed results remain saved.",
+            f"Batch stopped: {redact_credentials(error_message(exc), args)}. Completed results remain saved.",
             file=sys.stderr,
         )
         return 1
