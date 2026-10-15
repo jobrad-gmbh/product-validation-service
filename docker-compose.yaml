@@ -1,4 +1,14 @@
 services:
+  oauth:
+    image: ghcr.io/navikt/mock-oauth2-server:2.1.10
+    profiles: [local-auth]
+    ports:
+      - "127.0.0.1:9010:9010"
+    environment:
+      SERVER_PORT: 9010
+      JSON_CONFIG_PATH: /tmp/oauth-config.json
+    volumes:
+      - ./local/oauth-config.json:/tmp/oauth-config.json:ro
   postgres:
     image: postgres:17-alpine
     environment:
@@ -24,6 +34,8 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      AUTH_ISSUER: ${AUTH_ISSUER:-}
+      AUTH_AUDIENCE: ${AUTH_AUDIENCE:-accessory-validator}
     depends_on:
       postgres:
         condition: service_healthy

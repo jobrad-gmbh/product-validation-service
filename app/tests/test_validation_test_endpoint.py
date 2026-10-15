@@ -42,7 +42,7 @@ def llm_response(text, *, with_web_search=False):
 
 
 @pytest.fixture
-def api():
+def api(auth_context, monkeypatch):
     """App state wired like production, but without a database or real LLM."""
     requests: list[httpx.Request] = []
 
@@ -77,7 +77,8 @@ def api():
         LiteLLMClient(http_client, server_config), llm_request_repository
     )
     # No lifespan: the fixture provides the state that startup would create.
-    client = TestClient(app)
+    monkeypatch.setattr(app.state, "jwt_verifier", auth_context.verifier, raising=False)
+    client = TestClient(app, headers={"Authorization": f"Bearer {auth_context.mint()}"})
     yield client, requests, report_repository, llm_request_repository
 
 
@@ -152,7 +153,7 @@ def test_criterion_settings_apply_only_to_their_criterion(api):
 
     assert response.status_code == 200, response.text
     not_leasable, leasable = (json.loads(r.content) for r in requests[1:3])
-    assert not_leasable["model"] == "gpt-6-luna"
+    assert not_leasable["model"] == "openai/gpt-6-luna"
     assert not_leasable["temperature"] == 0.3
     assert leasable["model"] == "special"
     assert leasable["temperature"] == 0

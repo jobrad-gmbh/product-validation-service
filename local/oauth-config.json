@@ -1,0 +1,39 @@
+{
+  "interactiveLogin": false,
+  "httpServer": "NettyWrapper",
+  "tokenCallbacks": [
+    {
+      "issuerId": "accessory-validator",
+      "tokenExpiry": 3600,
+      "requestMappings": [
+        {
+          "requestParam": "client_id",
+          "match": "odoo-accessory-validator",
+          "claims": {
+            "aud": "accessory-validator",
+            "sub": "${clientId}",
+            "typ": "Bearer",
+            "realm_access": {"roles": ["SR_accessory-validator_validate"]},
+            "resource_access": {"accessory-validator": {"roles": ["validate"]}}
+          }
+        },
+        {
+          "requestParam": "client_id",
+          "match": "accessory-validator-tester",
+          "claims": {
+            "aud": "accessory-validator",
+            "sub": "${clientId}",
+            "typ": "Bearer",
+            "realm_access": {"roles": ["SR_accessory-validator_test_validate"]},
+            "resource_access": {"accessory-validator": {"roles": ["test_validate"]}}
+          }
+        },
+        {
+          "requestParam": "client_id",
+          "match": "*",
+          "claims": {"aud": "accessory-validator", "sub": "${clientId}", "typ": "Bearer", "realm_access": {"roles": []}}
+        }
+      ]
+    }
+  ]
+}

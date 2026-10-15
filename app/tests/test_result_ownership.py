@@ -193,7 +193,8 @@ def test_service_rejects_missing_repository():
         ProductValidationService([], None)
 
 
-def test_app_startup_configures_postgres_repository():
+def test_app_startup_configures_postgres_repository(auth_context, monkeypatch):
+    monkeypatch.setattr("app.main.settings", auth_context.settings)
     async def start():
         async with lifespan(app):
             assert isinstance(
